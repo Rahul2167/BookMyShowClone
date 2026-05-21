@@ -42,7 +42,7 @@ const AuthModal = ({ show, handleClose }) => {
                     password: formData.password,
                     role: "USER"
                 });
-                setSuccessMessage("Registration successful! A verification link has been sent to your email. Please click the link to activate your account before logging in.");
+                setSuccessMessage("Registration successful! Please sign in to verify your account.");
                 setIsLogin(true);
             }
         } catch (err) {
