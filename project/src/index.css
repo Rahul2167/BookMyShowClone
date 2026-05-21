@@ -1042,3 +1042,59 @@ a:hover {
 .admin-active-glow {
     animation: glow-pulse 2s infinite;
 }
+
+/* =========================================================
+   MOBILE RESPONSIVENESS TWEAKS
+   ========================================================= */
+
+@media (max-width: 768px) {
+  /* Reduce Hero Carousel height on mobile */
+  .hero-carousel .carousel-item {
+    height: 250px !important;
+  }
+  
+  /* Make typography slightly smaller */
+  h1 { font-size: 2rem !important; }
+  h2 { font-size: 1.75rem !important; }
+  h3 { font-size: 1.5rem !important; }
+  h4 { font-size: 1.25rem !important; }
+  
+  /* Seat layout panning */
+  .seat-map-container {
+    overflow-x: auto;
+    white-space: nowrap;
+    padding-bottom: 1rem;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  /* Dashboard specific padding adjustments */
+  .dashboard-content-wrapper {
+    padding: 1rem !important;
+  }
+
+  /* Admin Dashboard Mobile adjustments */
+  .admin-sidebar-mobile-toggle {
+    display: block !important;
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 1050;
+    border-radius: 50%;
+    width: 60px;
+    height: 60px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  }
+}
+
+@media (min-width: 992px) {
+  .admin-sidebar-mobile-toggle {
+    display: none !important;
+  }
+}
+
+/* Offcanvas custom background for mobile dashboards */
+.dashboard-offcanvas {
+  width: 280px !important;
+  background-color: var(--navbar-bg) !important;
+  color: var(--navbar-text) !important;
+}

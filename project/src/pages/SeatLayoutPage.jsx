@@ -151,64 +151,66 @@ const SeatLayoutPage = () => {
              <h5 className="text-muted">Layout unavailable.</h5>
           </div>
         ) : (
-          <div className="seat-grid-perspective" style={{ perspective: '1000px' }}>
-            {categoryGroups.map((group, gIdx) => (
-              <div key={gIdx} className="mb-5">
-                <div className="text-center mb-4">
-                  <span className="text-uppercase fw-bold text-muted" style={{ fontSize: '0.65rem', letterSpacing: '2px', borderBottom: '1px solid #eee', paddingBottom: '5px' }}>
-                    {group.type} - ₹{group.price}
-                  </span>
-                </div>
+          <div className="seat-map-container">
+            <div className="seat-grid-perspective" style={{ perspective: '1000px' }}>
+              {categoryGroups.map((group, gIdx) => (
+                <div key={gIdx} className="mb-5">
+                  <div className="text-center mb-4">
+                    <span className="text-uppercase fw-bold text-muted" style={{ fontSize: '0.65rem', letterSpacing: '2px', borderBottom: '1px solid #eee', paddingBottom: '5px' }}>
+                      {group.type} - ₹{group.price}
+                    </span>
+                  </div>
 
-                {group.rows.map((row, rIdx) => {
-                  const seatCount = row.seats.length;
-                  const middle = (seatCount - 1) / 2;
-                  
-                  return (
-                    <div key={rIdx} className="d-flex justify-content-center align-items-center mb-1">
-                      <div className="text-muted small me-3 fw-bold" style={{ width: '20px' }}>{row.label}</div>
-                      <div className="d-flex justify-content-center" style={{ gap: '6px' }}>
-                        {row.seats.map((seat, sIdx) => {
-                          const isSelected = selectedSeatObjects.some(s => s.showSeatId === seat.showSeatId);
-                          const isBooked = seat.status === 'BOOKED' || seat.status === 'LOCKED';
-                          
-                          // ─── Curve Calculation ───
-                          const distanceFromCenter = sIdx - middle;
-                          const verticalOffset = Math.pow(distanceFromCenter, 2) * 0.4;
-                          const rotation = distanceFromCenter * 1.5;
-                          
-                          return (
-                            <div 
-                              key={seat.showSeatId}
-                              onClick={() => !isBooked && toggleSeat(seat)}
-                              style={{
-                                width: '26px',
-                                height: '26px',
-                                borderRadius: '3px',
-                                border: isBooked ? 'none' : isSelected ? 'none' : '1.2px solid #4ABD5D',
-                                backgroundColor: isBooked ? '#f0f0f0' : isSelected ? '#F84464' : '#fff',
-                                color: isBooked ? '#f0f0f0' : isSelected ? '#fff' : '#4ABD5D',
-                                cursor: isBooked ? 'not-allowed' : 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                fontSize: '0.65rem',
-                                fontWeight: '700',
-                                transform: `translateY(${verticalOffset}px) rotate(${rotation}deg)`,
-                                transition: 'all 0.15s ease',
-                                userSelect: 'none'
-                              }}
-                            >
-                              {isBooked ? '' : seat.seatNumber}
-                            </div>
-                          );
-                        })}
+                  {group.rows.map((row, rIdx) => {
+                    const seatCount = row.seats.length;
+                    const middle = (seatCount - 1) / 2;
+                    
+                    return (
+                      <div key={rIdx} className="d-flex justify-content-center align-items-center mb-1">
+                        <div className="text-muted small me-3 fw-bold" style={{ width: '20px' }}>{row.label}</div>
+                        <div className="d-flex justify-content-center" style={{ gap: '6px' }}>
+                          {row.seats.map((seat, sIdx) => {
+                            const isSelected = selectedSeatObjects.some(s => s.showSeatId === seat.showSeatId);
+                            const isBooked = seat.status === 'BOOKED' || seat.status === 'LOCKED';
+                            
+                            // ─── Curve Calculation ───
+                            const distanceFromCenter = sIdx - middle;
+                            const verticalOffset = Math.pow(distanceFromCenter, 2) * 0.4;
+                            const rotation = distanceFromCenter * 1.5;
+                            
+                            return (
+                              <div 
+                                key={seat.showSeatId}
+                                onClick={() => !isBooked && toggleSeat(seat)}
+                                style={{
+                                  width: '26px',
+                                  height: '26px',
+                                  borderRadius: '3px',
+                                  border: isBooked ? 'none' : isSelected ? 'none' : '1.2px solid #4ABD5D',
+                                  backgroundColor: isBooked ? '#f0f0f0' : isSelected ? '#F84464' : '#fff',
+                                  color: isBooked ? '#f0f0f0' : isSelected ? '#fff' : '#4ABD5D',
+                                  cursor: isBooked ? 'not-allowed' : 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  fontSize: '0.65rem',
+                                  fontWeight: '700',
+                                  transform: `translateY(${verticalOffset}px) rotate(${rotation}deg)`,
+                                  transition: 'all 0.15s ease',
+                                  userSelect: 'none'
+                                }}
+                              >
+                                {isBooked ? '' : seat.seatNumber}
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
           </div>
         )}
 

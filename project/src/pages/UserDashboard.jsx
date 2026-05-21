@@ -307,7 +307,7 @@ const UserDashboard = () => {
     }
 
     return (
-        <Container className="py-5" style={{ minHeight: '80vh' }}>
+        <Container className="py-5 dashboard-content-wrapper" style={{ minHeight: '80vh' }}>
             {status.message && <Alert variant={status.type} className="mb-4">{status.message}</Alert>}
             
             <Row className="mb-5 align-items-center">

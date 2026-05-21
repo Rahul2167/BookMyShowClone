@@ -566,7 +566,7 @@ const AdminDashboard = () => {
     const activeTab = queryParams.get('tab') || 'analytics';
 
     return (
-        <div className="admin-page-container">
+        <div className="admin-page-container dashboard-content-wrapper">
             <div className="d-flex justify-content-between align-items-center mb-5">
                 <div>
                     <h1 className="fw-bold mb-1" style={{ color: 'var(--text-primary)', letterSpacing: '-1.5px', fontSize: '2.5rem' }}>

@@ -212,8 +212,8 @@ const Sidebar = () => {
             </div>
 
             {/* Mobile Toggle Button */}
-            <div className="d-lg-none position-fixed top-0 start-0 p-3" style={{ zIndex: 1001 }}>
-                <Button variant="danger" className="rounded-circle shadow" onClick={toggleSidebar}>
+            <div className="admin-sidebar-mobile-toggle d-lg-none">
+                <Button variant="danger" className="rounded-circle shadow w-100 h-100 d-flex justify-content-center align-items-center p-0" onClick={toggleSidebar}>
                     <Menu size={24} />
                 </Button>
             </div>

@@ -77,7 +77,7 @@ const AuthModal = ({ show, handleClose }) => {
                     {isLogin ? "Welcome Back" : "Create Account"}
                 </Modal.Title>
             </Modal.Header>
-            <Modal.Body className="px-5 pb-5 pt-3">
+            <Modal.Body className="px-4 px-md-5 pb-5 pt-3">
                 {error && <Alert variant="danger" className="py-2">{error}</Alert>}
                 {successMessage && <Alert variant="success" className="py-2">{successMessage}</Alert>}
                 <Form onSubmit={handleSubmit}>
