@@ -130,8 +130,11 @@ const FoodSelectionPage = () => {
             {foodItems.map(item => (
               <Col xs={6} md={4} lg={3} className="mb-3 mb-md-4" key={item.foodItemId}>
                 <Card className="h-100 shadow-sm border-0">
-                  <div style={{ height: '120px', backgroundColor: '#f8f9fa', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <span style={{ fontSize: '2.5rem' }}>{item.category?.categoryName === 'Beverages' ? '🥤' : '🍿'}</span>
+                  <div style={{ height: '120px', backgroundColor: '#f8f9fa', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                    {item.imageUrl ? (
+                      <img src={item.imageUrl} alt={item.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.target.style.display='none'; e.target.nextSibling.style.display='inline-block'; }} />
+                    ) : null}
+                    <span style={{ fontSize: '2.5rem', display: item.imageUrl ? 'none' : 'inline-block' }}>{item.category?.categoryName === 'Beverages' ? '🥤' : '🍿'}</span>
                   </div>
                   <Card.Body className="d-flex flex-column p-2 p-md-3">
                     <Card.Title style={{ fontSize: '0.95rem', fontWeight: 'bold' }}>{item.name}</Card.Title>
