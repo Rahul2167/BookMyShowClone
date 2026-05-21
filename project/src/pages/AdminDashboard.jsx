@@ -230,7 +230,39 @@ const AdminDashboard = () => {
                 API.getAllComplaints().catch(() => ({ data: [] }))
             ]);
             
-            setStats(statsRes.data || {});
+            let fetchedStats = statsRes.data || {};
+
+            // OVERRIDE: Calculate correct revenue stats from bookings to fix double-counting bug from backend
+            let correctMovieRevenue = 0;
+            let correctFoodRevenue = 0;
+            let correctTotalRevenue = 0;
+
+            const allBookings = bookingsRes.data || [];
+            allBookings.forEach(b => {
+                const status = String(b.status).toUpperCase();
+                if (status === 'CONFIRMED' || status === 'PAID') {
+                    const grandTotal = b.totalAmount || b.finalAmountPaid || 0;
+                    let foodTotal = 0;
+                    if (b.concessionOrders && b.concessionOrders.length > 0) {
+                        foodTotal = b.concessionOrders.reduce((sum, co) => sum + (co.totalPrice || 0), 0);
+                    }
+                    const ticketTotal = grandTotal - foodTotal;
+                    
+                    correctMovieRevenue += ticketTotal;
+                    correctFoodRevenue += foodTotal;
+                    correctTotalRevenue += grandTotal;
+                }
+            });
+
+            // Update stats with correct numbers
+            fetchedStats = {
+                ...fetchedStats,
+                totalRevenue: correctTotalRevenue,
+                movieRevenue: correctMovieRevenue,
+                foodRevenue: correctFoodRevenue
+            };
+
+            setStats(fetchedStats);
             setRevenueData(revenueRes.data || []);
             setFoodData(foodStatsRes.data || []);
 
