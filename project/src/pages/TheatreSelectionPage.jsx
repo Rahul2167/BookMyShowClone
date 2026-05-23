@@ -185,7 +185,12 @@ const TheatreSelectionPage = () => {
 
   const getShowDate = (show) => show.date ? show.date.substring(0,10) : (show.startTime ? show.startTime.substring(0,10) : '');
 
-  const filteredShows = shows.filter(s => !selectedDate || getShowDate(s) === toStr(selectedDate));
+  const filteredShows = shows.filter(s => {
+    const isSelectedDate = !selectedDate || getShowDate(s) === toStr(selectedDate);
+    const showTime = s.startTime ? new Date(s.startTime) : null;
+    const isFuture = showTime ? showTime > new Date() : true;
+    return isSelectedDate && isFuture;
+  });
 
   const groupedShows = filteredShows.reduce((acc, show) => {
     const id = show.theatreId || 'unknown';

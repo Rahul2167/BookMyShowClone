@@ -448,6 +448,25 @@ const AdminDashboard = () => {
 
         // Build startTime as a proper ISO datetime string
         const startTimeValue = showForm.startTime; // e.g. "2026-05-11T12:00"
+        
+        // Conflict check: ensure no show on the same screen within 3 hours
+        const newShowTime = new Date(startTimeValue).getTime();
+        const hasConflict = shows.some(s => {
+            if (String(s.screenId) === String(showForm.screenId) && String(s.showId) !== String(editingId)) {
+                const existingShowTime = new Date(s.startTime).getTime();
+                // Check if within 3 hours (10800000 ms)
+                if (Math.abs(existingShowTime - newShowTime) < 10800000) {
+                    return true;
+                }
+            }
+            return false;
+        });
+
+        if (hasConflict) {
+            showMessage('danger', 'Screen is already occupied! Please allow at least 3 hours between shows.');
+            return;
+        }
+
         // Derive date from startTime
         const dateValue = startTimeValue ? startTimeValue.substring(0, 10) : null;
         const payload = {
