@@ -65,7 +65,19 @@ const AdminDashboard = () => {
     // Form States
     const [movieForm, setMovieForm] = useState({ title: '', description: '', language: '', genre: '', duration: '', posterUrl: '', bannerUrl: '', releaseDate: '' });
     const [theatreForm, setTheatreForm] = useState({ name: '', city: '', address: '', contactInfo: '' });
-    const [showForm, setShowForm] = useState({ movieId: '', theatreId: '', screenId: '', startTime: '', selectedDate: '', showType: '2D' });
+    const [showForm, setShowForm] = useState({ 
+        movieId: '', 
+        theatreId: '', 
+        screenId: '', 
+        startTime: '', 
+        selectedDate: '', 
+        showType: '2D',
+        schedulingMode: 'single',
+        startDate: '',
+        endDate: '',
+        showTimes: ['12:00']
+    });
+    const [newTime, setNewTime] = useState('12:00');
     const [foodForm, setFoodForm] = useState({ name: '', price: '', description: '', isAvailable: true, imageUrl: '' });
     const [availableScreens, setAvailableScreens] = useState([]);
     const [screenAvailability, setScreenAvailability] = useState({}); // { screenId: [show, ...] }
@@ -355,9 +367,26 @@ const AdminDashboard = () => {
     };
 
     const resetForms = () => {
+        const todayStr = toDateStr(new Date());
+        const weekLater = new Date();
+        weekLater.setDate(weekLater.getDate() + 7);
+        const weekLaterStr = toDateStr(weekLater);
+
         setMovieForm({ title: '', description: '', language: '', genre: '', duration: '', posterUrl: '', bannerUrl: '', releaseDate: '' });
         setTheatreForm({ name: '', city: '', address: '', contactInfo: '' });
-        setShowForm({ movieId: '', theatreId: '', screenId: '', startTime: '', showType: '2D' });
+        setShowForm({ 
+            movieId: '', 
+            theatreId: '', 
+            screenId: '', 
+            startTime: '', 
+            selectedDate: '', 
+            showType: '2D',
+            schedulingMode: 'single',
+            startDate: todayStr,
+            endDate: weekLaterStr,
+            showTimes: ['12:00']
+        });
+        setNewTime('12:00');
         setFoodForm({ name: '', price: '', description: '', isAvailable: true, imageUrl: '' });
         setAvailableScreens([]);
         setUserForm({ name: '', email: '', phone: '', password: '', isAdmin: false });
@@ -387,7 +416,11 @@ const AdminDashboard = () => {
                 theatreId: item.theatreId, 
                 screenId: item.screenId, 
                 startTime: item.startTime?.split('.')[0],
-                showType: item.showType || '2D'
+                showType: item.showType || '2D',
+                schedulingMode: 'single',
+                startDate: '',
+                endDate: '',
+                showTimes: []
             });
             setShowModal('show');
         } else if (type === 'food') {
@@ -429,13 +462,54 @@ const AdminDashboard = () => {
             if (isEditing) {
                 await API.updateTheatre(editingId, theatreForm);
                 showMessage('success', 'Theatre updated!');
-            } else {
-                await API.addTheatre(theatreForm);
-                showMessage('success', 'Theatre added!');
-            }
+                        }
             resetForms();
             fetchAllData();
         } catch (err) { showMessage('danger', isEditing ? 'Update failed.' : 'Add failed.'); }
+    };
+
+    const getBatchPreview = () => {
+        if (!showForm.startDate || !showForm.endDate || !showForm.screenId || !showForm.showTimes || showForm.showTimes.length === 0) {
+            return [];
+        }
+        const preview = [];
+        const start = new Date(showForm.startDate + 'T00:00:00');
+        const end = new Date(showForm.endDate + 'T00:00:00');
+        
+        // Safety check to prevent huge ranges (max 30 days)
+        const diffTime = end.getTime() - start.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        if (diffDays < 0 || diffDays > 30) {
+            return [];
+        }
+        
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+            const dateStr = toDateStr(d);
+            showForm.showTimes.forEach(timeStr => {
+                const startTimeStr = `${dateStr}T${timeStr}`;
+                const newShowTimeMs = new Date(startTimeStr).getTime();
+                
+                // Find conflict
+                const conflictShow = (shows || []).find(s => {
+                    if (String(s.screenId) === String(showForm.screenId) && String(s.showId) !== String(editingId)) {
+                        const existingShowTime = new Date(s.startTime).getTime();
+                        return Math.abs(existingShowTime - newShowTimeMs) < 10800000; // 3 hours
+                    }
+                    return false;
+                });
+                
+                preview.push({
+                    date: dateStr,
+                    time: timeStr,
+                    startTime: startTimeStr,
+                    conflict: conflictShow ? {
+                        movieTitle: conflictShow.movieTitle,
+                        startTime: new Date(conflictShow.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                    } : null
+                });
+            });
+        }
+        return preview;
     };
 
     const handleShowSubmit = async (e) => {
@@ -446,49 +520,86 @@ const AdminDashboard = () => {
             return;
         }
 
-        // Build startTime as a proper ISO datetime string
-        const startTimeValue = showForm.startTime; // e.g. "2026-05-11T12:00"
-        
-        // Conflict check: ensure no show on the same screen within 3 hours
-        const newShowTime = new Date(startTimeValue).getTime();
-        const hasConflict = shows.some(s => {
-            if (String(s.screenId) === String(showForm.screenId) && String(s.showId) !== String(editingId)) {
-                const existingShowTime = new Date(s.startTime).getTime();
-                // Check if within 3 hours (10800000 ms)
-                if (Math.abs(existingShowTime - newShowTime) < 10800000) {
-                    return true;
+        if (showForm.schedulingMode === 'batch') {
+            const preview = getBatchPreview();
+            const validShows = preview.filter(p => !p.conflict);
+            const conflictedShowsCount = preview.length - validShows.length;
+            
+            if (validShows.length === 0) {
+                showMessage('danger', 'All selected dates and times have conflicts! Please select different times or screens.');
+                return;
+            }
+
+            try {
+                setLoading(true);
+                let successCount = 0;
+                // Schedule all valid shows sequentially
+                for (const item of validShows) {
+                    const payload = {
+                        movieId: parseInt(showForm.movieId),
+                        screen: { screenId: parseInt(showForm.screenId) },
+                        startTime: item.startTime,
+                        date: item.date,
+                        showType: showForm.showType
+                    };
+                    await API.addShow(payload);
+                    successCount++;
                 }
+                
+                showMessage('success', `Scheduled ${successCount} show(s) successfully! ${conflictedShowsCount > 0 ? `${conflictedShowsCount} show(s) skipped due to screen occupancy.` : ''}`);
+                resetForms();
+                fetchAllData();
+            } catch (err) {
+                console.error('Batch show submit error:', err);
+                showMessage('danger', 'Operation partially failed: ' + (err?.response?.data || err.message));
+            } finally {
+                setLoading(false);
             }
-            return false;
-        });
+        } else {
+            // Build startTime as a proper ISO datetime string
+            const startTimeValue = showForm.startTime; // e.g. "2026-05-11T12:00"
+            
+            // Conflict check: ensure no show on the same screen within 3 hours
+            const newShowTime = new Date(startTimeValue).getTime();
+            const hasConflict = shows.some(s => {
+                if (String(s.screenId) === String(showForm.screenId) && String(s.showId) !== String(editingId)) {
+                    const existingShowTime = new Date(s.startTime).getTime();
+                    // Check if within 3 hours (10800000 ms)
+                    if (Math.abs(existingShowTime - newShowTime) < 10800000) {
+                        return true;
+                    }
+                }
+                return false;
+            });
 
-        if (hasConflict) {
-            showMessage('danger', 'Screen is already occupied! Please allow at least 3 hours between shows.');
-            return;
-        }
-
-        // Derive date from startTime
-        const dateValue = startTimeValue ? startTimeValue.substring(0, 10) : null;
-        const payload = {
-            movieId: parseInt(showForm.movieId),
-            screen: { screenId: parseInt(showForm.screenId) },
-            startTime: startTimeValue ? startTimeValue : null,
-            date: dateValue,
-            showType: showForm.showType
-        };
-        try {
-            if (isEditing) {
-                await API.updateShow(editingId, payload);
-                showMessage('success', 'Show updated!');
-            } else {
-                await API.addShow(payload);
-                showMessage('success', 'Show scheduled! Seats auto-generated from screen layout.');
+            if (hasConflict) {
+                showMessage('danger', 'Screen is already occupied! Please allow at least 3 hours between shows.');
+                return;
             }
-            resetForms();
-            fetchAllData();
-        } catch (err) {
-            console.error('Show submit error:', err);
-            showMessage('danger', 'Operation failed: ' + (err?.response?.data || err.message));
+
+            // Derive date from startTime
+            const dateValue = startTimeValue ? startTimeValue.substring(0, 10) : null;
+            const payload = {
+                movieId: parseInt(showForm.movieId),
+                screen: { screenId: parseInt(showForm.screenId) },
+                startTime: startTimeValue ? startTimeValue : null,
+                date: dateValue,
+                showType: showForm.showType
+            };
+            try {
+                if (isEditing) {
+                    await API.updateShow(editingId, payload);
+                    showMessage('success', 'Show updated!');
+                } else {
+                    await API.addShow(payload);
+                    showMessage('success', 'Show scheduled! Seats auto-generated from screen layout.');
+                }
+                resetForms();
+                fetchAllData();
+            } catch (err) {
+                console.error('Show submit error:', err);
+                showMessage('danger', 'Operation failed: ' + (err?.response?.data || err.message));
+            }
         }
     };
 
@@ -1182,6 +1293,28 @@ const AdminDashboard = () => {
                 </Modal.Header>
                 <Modal.Body className="pt-3">
                     <Form onSubmit={handleShowSubmit}>
+                        {!isEditing && (
+                            <div className="d-flex justify-content-center mb-3">
+                                <div className="btn-group btn-group-sm admin-toggle-group w-100" style={{ maxWidth: '320px' }}>
+                                    <Button 
+                                        type="button"
+                                        variant={showForm.schedulingMode === 'single' ? 'danger' : 'outline-secondary'} 
+                                        className="py-2 fw-bold" 
+                                        onClick={() => setShowForm({...showForm, schedulingMode: 'single'})}
+                                    >
+                                        Single Show
+                                    </Button>
+                                    <Button 
+                                        type="button"
+                                        variant={showForm.schedulingMode === 'batch' ? 'danger' : 'outline-secondary'} 
+                                        className="py-2 fw-bold" 
+                                        onClick={() => setShowForm({...showForm, schedulingMode: 'batch'})}
+                                    >
+                                        Batch Schedule
+                                    </Button>
+                                </div>
+                            </div>
+                        )}
                         <div className="d-grid gap-3">
 
                             {/* ── Step 1: Pick Movie & Theatre ── */}
@@ -1206,61 +1339,88 @@ const AdminDashboard = () => {
                                 </Col>
                             </Row>
 
-                            {/* ── Step 2: 7-Day Date Selector ── */}
-                            <div>
-                                <Form.Label className="fw-semibold small d-block mb-2">
-                                    Select Date <span className="text-muted fw-normal">(Advance Booking — 7 days)</span>
-                                </Form.Label>
-                                <div className="d-flex gap-2 overflow-auto pb-1">
-                                    {bookingDateOptions.map((date, idx) => {
-                                        const dateStr = toDateStr(date);
-                                        const isSelected = showForm.selectedDate === dateStr;
-                                        const monthName = date.toLocaleString('default', { month: 'short' }).toUpperCase();
-                                        const dayNum = date.getDate();
-                                        const dayName = date.toLocaleString('default', { weekday: 'short' }).toUpperCase();
-                                        return (
-                                            <button
-                                                key={idx}
-                                                type="button"
-                                                onClick={() => setShowForm(prev => ({
-                                                    ...prev,
-                                                    selectedDate: dateStr,
-                                                    startTime: prev.startTime
-                                                        ? `${dateStr}T${prev.startTime.includes('T') ? prev.startTime.split('T')[1] : '12:00'}`
-                                                        : `${dateStr}T12:00`
-                                                }))}
-                                                style={{
-                                                    minWidth: '64px',
-                                                    cursor: 'pointer',
-                                                    backgroundColor: isSelected ? 'var(--bms-red, #e63946)' : 'var(--card-bg, #f8f9fa)',
-                                                    color: isSelected ? 'white' : 'var(--text-primary, #222)',
-                                                    border: isSelected ? '2px solid var(--bms-red, #e63946)' : '2px solid #e9ecef',
-                                                    borderRadius: '12px',
-                                                    padding: '8px 6px',
-                                                    textAlign: 'center',
-                                                    transition: 'all 0.18s ease',
-                                                    boxShadow: isSelected ? '0 4px 14px rgba(230,57,70,0.3)' : '0 1px 3px rgba(0,0,0,0.06)',
-                                                    fontFamily: 'inherit',
-                                                    outline: 'none',
-                                                    flexShrink: 0
-                                                }}
-                                            >
-                                                <div style={{ fontSize: '0.6rem', fontWeight: '700', letterSpacing: '0.5px', opacity: isSelected ? 1 : 0.55 }}>{monthName}</div>
-                                                <div style={{ fontWeight: '800', fontSize: '1.25rem', lineHeight: '1.15' }}>{dayNum}</div>
-                                                <div style={{ fontSize: '0.6rem', fontWeight: '700', opacity: isSelected ? 0.9 : 0.5 }}>{idx === 0 ? 'TODAY' : dayName}</div>
-                                            </button>
-                                        );
-                                    })}
+                            {/* ── Step 2: Date Selector ── */}
+                            {showForm.schedulingMode !== 'batch' ? (
+                                <div>
+                                    <Form.Label className="fw-semibold small d-block mb-2">
+                                        Select Date <span className="text-muted fw-normal">(Advance Booking — 7 days)</span>
+                                    </Form.Label>
+                                    <div className="d-flex gap-2 overflow-auto pb-1">
+                                        {bookingDateOptions.map((date, idx) => {
+                                            const dateStr = toDateStr(date);
+                                            const isSelected = showForm.selectedDate === dateStr;
+                                            const monthName = date.toLocaleString('default', { month: 'short' }).toUpperCase();
+                                            const dayNum = date.getDate();
+                                            const dayName = date.toLocaleString('default', { weekday: 'short' }).toUpperCase();
+                                            return (
+                                                <button
+                                                    key={idx}
+                                                    type="button"
+                                                    onClick={() => setShowForm(prev => ({
+                                                        ...prev,
+                                                        selectedDate: dateStr,
+                                                        startTime: prev.startTime
+                                                            ? `${dateStr}T${prev.startTime.includes('T') ? prev.startTime.split('T')[1] : '12:00'}`
+                                                            : `${dateStr}T12:00`
+                                                    }))}
+                                                    style={{
+                                                        minWidth: '64px',
+                                                        cursor: 'pointer',
+                                                        backgroundColor: isSelected ? 'var(--bms-red, #e63946)' : 'var(--card-bg, #f8f9fa)',
+                                                        color: isSelected ? 'white' : 'var(--text-primary, #222)',
+                                                        border: isSelected ? '2px solid var(--bms-red, #e63946)' : '2px solid #e9ecef',
+                                                        borderRadius: '12px',
+                                                        padding: '8px 6px',
+                                                        textAlign: 'center',
+                                                        transition: 'all 0.18s ease',
+                                                        boxShadow: isSelected ? '0 4px 14px rgba(230,57,70,0.3)' : '0 1px 3px rgba(0,0,0,0.06)',
+                                                        fontFamily: 'inherit',
+                                                        outline: 'none',
+                                                        flexShrink: 0
+                                                    }}
+                                                >
+                                                    <div style={{ fontSize: '0.6rem', fontWeight: '700', letterSpacing: '0.5px', opacity: isSelected ? 1 : 0.55 }}>{monthName}</div>
+                                                    <div style={{ fontWeight: '800', fontSize: '1.25rem', lineHeight: '1.15' }}>{dayNum}</div>
+                                                    <div style={{ fontSize: '0.6rem', fontWeight: '700', opacity: isSelected ? 0.9 : 0.5 }}>{idx === 0 ? 'TODAY' : dayName}</div>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
                                 </div>
-                            </div>
+                            ) : (
+                                <Row className="g-3">
+                                    <Col md={6}>
+                                        <Form.Group>
+                                            <Form.Label className="fw-semibold small">Start Date</Form.Label>
+                                            <Form.Control 
+                                                required
+                                                type="date"
+                                                value={showForm.startDate || ''}
+                                                onChange={e => setShowForm({...showForm, startDate: e.target.value})}
+                                            />
+                                        </Form.Group>
+                                    </Col>
+                                    <Col md={6}>
+                                        <Form.Group>
+                                            <Form.Label className="fw-semibold small">End Date</Form.Label>
+                                            <Form.Control 
+                                                required
+                                                type="date"
+                                                value={showForm.endDate || ''}
+                                                onChange={e => setShowForm({...showForm, endDate: e.target.value})}
+                                            />
+                                        </Form.Group>
+                                    </Col>
+                                </Row>
+                            )}
 
                             {/* ── Step 3: Screen + Availability ── */}
                             <div>
                                 <Form.Label className="fw-semibold small d-block mb-2">
                                     Select Screen
-                                    {showForm.selectedDate && availableScreens.length > 0 && (
+                                    {(showForm.selectedDate || showForm.schedulingMode === 'batch') && availableScreens.length > 0 && (
                                         <span className="text-muted fw-normal ms-2">
-                                            — availability for {new Date(showForm.selectedDate + 'T00:00').toLocaleDateString('default', { weekday: 'short', month: 'short', day: 'numeric' })}
+                                            — {showForm.schedulingMode === 'batch' ? 'batch schedule mode' : `availability for ${new Date(showForm.selectedDate + 'T00:00').toLocaleDateString('default', { weekday: 'short', month: 'short', day: 'numeric' })}`}
                                         </span>
                                     )}
                                 </Form.Label>
@@ -1334,7 +1494,9 @@ const AdminDashboard = () => {
                                                         </div>
                                                     </div>
                                                     <div className="text-end">
-                                                        {!dateChosen ? (
+                                                        {showForm.schedulingMode === 'batch' ? (
+                                                            <span className="badge rounded-pill bg-danger" style={{ fontSize: '0.7rem' }}>Batch Mode</span>
+                                                        ) : !dateChosen ? (
                                                             <span className="badge rounded-pill" style={{ backgroundColor: '#e9ecef', color: '#6c757d', fontSize: '0.7rem' }}>Pick a date</span>
                                                         ) : checkingAvailability ? (
                                                             <span className="badge rounded-pill bg-secondary" style={{ fontSize: '0.7rem' }}>Checking...</span>
@@ -1370,22 +1532,121 @@ const AdminDashboard = () => {
                                 )}
                             </div>
 
-                            {/* ── Step 4: Start Time (time only, date pre-filled) ── */}
-                            <Form.Group>
-                                <Form.Label className="fw-semibold small">Show Start Time</Form.Label>
-                                <Form.Control
-                                    required
-                                    type="datetime-local"
-                                    value={showForm.startTime}
-                                    min={showForm.selectedDate ? `${showForm.selectedDate}T00:00` : undefined}
-                                    onChange={e => setShowForm({...showForm, startTime: e.target.value, selectedDate: e.target.value.substring(0,10)})}
-                                />
-                                {showForm.selectedDate && (
-                                    <Form.Text className="text-muted">
-                                        Showing on: <strong>{new Date(showForm.selectedDate + 'T00:00').toLocaleDateString('default', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</strong>
-                                    </Form.Text>
-                                )}
-                            </Form.Group>
+                            {/* ── Step 4: Start Time ── */}
+                            {showForm.schedulingMode !== 'batch' ? (
+                                <Form.Group>
+                                    <Form.Label className="fw-semibold small">Show Start Time</Form.Label>
+                                    <Form.Control
+                                        required
+                                        type="datetime-local"
+                                        value={showForm.startTime}
+                                        min={showForm.selectedDate ? `${showForm.selectedDate}T00:00` : undefined}
+                                        onChange={e => setShowForm({...showForm, startTime: e.target.value, selectedDate: e.target.value.substring(0,10)})}
+                                    />
+                                    {showForm.selectedDate && (
+                                        <Form.Text className="text-muted">
+                                            Showing on: <strong>{new Date(showForm.selectedDate + 'T00:00').toLocaleDateString('default', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</strong>
+                                        </Form.Text>
+                                    )}
+                                </Form.Group>
+                            ) : (
+                                <div className="border p-3 rounded-4 bg-light shadow-sm">
+                                    <Form.Group>
+                                        <Form.Label className="fw-semibold small">Add Show Times</Form.Label>
+                                        <div className="d-flex gap-2 align-items-center mb-3">
+                                            <Form.Control 
+                                                type="time" 
+                                                value={newTime} 
+                                                onChange={e => setNewTime(e.target.value)} 
+                                                style={{ maxWidth: '140px' }}
+                                            />
+                                            <Button 
+                                                type="button" 
+                                                variant="danger" 
+                                                className="rounded-pill px-3"
+                                                onClick={() => {
+                                                    if (newTime && !showForm.showTimes.includes(newTime)) {
+                                                        setShowForm({
+                                                            ...showForm,
+                                                            showTimes: [...showForm.showTimes, newTime].sort()
+                                                        });
+                                                    }
+                                                }}
+                                            >
+                                                Add Time
+                                            </Button>
+                                        </div>
+                                        <div className="d-flex flex-wrap gap-2 mb-2">
+                                            {showForm.showTimes.map((time, idx) => (
+                                                <Badge 
+                                                    key={idx} 
+                                                    bg="danger" 
+                                                    className="p-2 d-flex align-items-center gap-2 rounded-pill"
+                                                    style={{ fontSize: '0.85rem' }}
+                                                >
+                                                    {time}
+                                                    <span 
+                                                        style={{ cursor: 'pointer', fontWeight: 'bold' }} 
+                                                        onClick={() => setShowForm({
+                                                            ...showForm,
+                                                            showTimes: showForm.showTimes.filter(t => t !== time)
+                                                        })}
+                                                    >
+                                                        &times;
+                                                    </span>
+                                                </Badge>
+                                            ))}
+                                            {showForm.showTimes.length === 0 && (
+                                                <span className="text-muted small fst-italic">No show times added.</span>
+                                            )}
+                                        </div>
+                                    </Form.Group>
+
+                                    {/* Batch Preview Section */}
+                                    {getBatchPreview().length > 0 && (
+                                        <div className="mt-4">
+                                            <h6 className="fw-bold mb-2 small text-uppercase text-muted" style={{ letterSpacing: '0.5px' }}>
+                                                Batch Preview & Conflict Check
+                                            </h6>
+                                            <div className="border rounded-3 overflow-hidden bg-white" style={{ maxHeight: '180px', overflowY: 'auto' }}>
+                                                <Table hover size="sm" className="mb-0" style={{ fontSize: '0.82rem' }}>
+                                                    <thead className="bg-light">
+                                                        <tr>
+                                                            <th className="ps-3">Date</th>
+                                                            <th>Time</th>
+                                                            <th className="text-end pe-3">Status</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {getBatchPreview().map((item, idx) => (
+                                                            <tr key={idx}>
+                                                                <td className="ps-3 font-monospace">{new Date(item.date + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</td>
+                                                                <td className="fw-bold text-danger">{item.time}</td>
+                                                                <td className="text-end pe-3">
+                                                                    {item.conflict ? (
+                                                                        <span className="text-danger fw-semibold d-flex align-items-center justify-content-end gap-1">
+                                                                            <span style={{ width: '6px', height: '6px', backgroundColor: 'var(--bms-red)', borderRadius: '50%' }}></span>
+                                                                            Conflict: {item.conflict.movieTitle} ({item.conflict.startTime})
+                                                                        </span>
+                                                                    ) : (
+                                                                        <span className="text-success fw-semibold d-flex align-items-center justify-content-end gap-1">
+                                                                            <span style={{ width: '6px', height: '6px', backgroundColor: '#198754', borderRadius: '50%' }}></span>
+                                                                            Available
+                                                                        </span>
+                                                                    )}
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </Table>
+                                            </div>
+                                            <div className="text-muted mt-2" style={{ fontSize: '0.72rem' }}>
+                                                Shows with conflicts will be automatically skipped.
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
 
                             <Form.Group>
                                 <Form.Label className="fw-semibold small">Show Type</Form.Label>
@@ -1413,7 +1674,7 @@ const AdminDashboard = () => {
                             variant="danger" 
                             type="submit" 
                             className="w-100 mt-3 py-2 rounded-pill btn-primary-bms fw-bold shadow-sm"
-                            disabled={!showForm.screenId}
+                            disabled={!showForm.screenId || (showForm.schedulingMode === 'batch' && showForm.showTimes.length === 0)}
                         >
                             {isEditing ? 'Update Show' : 'Schedule Show'}
                         </Button>
