@@ -230,9 +230,9 @@ Protected routes (e.g., /dashboard, /admin) check for token presence; unauthenti
 
 Demo Credentials (if backend seed data exists):
 
-Email: admin@example.com / Password: admin123 (Admin role)
+Email: Admin@gmail.com / Password: Admin (Admin role)
 
-Email: user@example.com / Password: user123 (User role)
+Email: rahulpotdar2167@gmail.com / Password: 123123 (User role)
 
 📄 License
 This project is for educational purposes. You are free to use, modify, and distribute it for personal or commercial use with proper attribution.
