@@ -243,7 +243,6 @@ Contributions are welcome! Please open an issue or submit a pull request.
 📬 Contact
 Project Maintainer: Rahul Potdar
 
-Gmail Id: [rahulpotdar2167@gmail.com]
 GitHub Issues: [https://github.com/Rahul2167/BookMyShowClone/issues]
 
 Made with ❤️ for movie lovers everywhere.
