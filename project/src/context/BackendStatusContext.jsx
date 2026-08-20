@@ -7,7 +7,7 @@ let globalTriggerStart = null;
 let globalTriggerSuccess = null;
 let globalTriggerError = null;
 
-// Synchronously attach Axios interceptors at module level to guarantee all API calls are caught
+// Synchronously attach Axios interceptors at module level to catch initial API calls
 API.interceptors.request.use(
   (config) => {
     if (globalTriggerStart) {
@@ -37,7 +37,7 @@ API.interceptors.response.use(
         globalTriggerSuccess('Backend is live & connected!');
       }
     } else {
-      // Network error or timeout (Render backend sleeping)
+      // True network error or timeout (Render backend sleeping)
       if (globalTriggerError) {
         globalTriggerError('Connection delayed. Render free backend is spinning up, please allow ~1 min...');
       }
@@ -51,10 +51,17 @@ export const BackendStatusProvider = ({ children }) => {
   const [apiStatus, setApiStatus] = useState('idle'); // 'idle' | 'loading' | 'live' | 'error'
   const [statusMessage, setStatusMessage] = useState('');
   const [isBannerVisible, setIsBannerVisible] = useState(false);
+
   const hideTimerRef = useRef(null);
+  // Ref to track if backend has already been verified live during this session
+  const hasVerifiedLiveRef = useRef(false);
 
   const triggerApiStart = useCallback(
     (msg = 'Backend is hosted on Render (takes ~1 minute initial wake-up time). Backend is live, please wait...') => {
+      // If backend is already verified live, DO NOT pop up the disclaimer again on subsequent API calls (e.g. login)
+      if (hasVerifiedLiveRef.current) {
+        return;
+      }
       if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
       setIsApiLoading(true);
       setApiStatus('loading');
@@ -65,27 +72,33 @@ export const BackendStatusProvider = ({ children }) => {
   );
 
   const triggerApiSuccess = useCallback((msg = 'Backend is live & connected!') => {
+    // Mark backend as verified live so login/search/navigation calls won't show disclaimer again
+    hasVerifiedLiveRef.current = true;
+
     if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
     setIsApiLoading(false);
     setApiStatus('live');
     setStatusMessage(msg);
     setIsBannerVisible(true);
 
-    // Auto-hide banner 2.5s after backend is live & connected
+    // Auto-hide banner 2 seconds after backend is live & connected
     hideTimerRef.current = setTimeout(() => {
       setIsBannerVisible(false);
-    }, 2500);
+    }, 2000);
   }, []);
 
   const triggerApiError = useCallback(
     (msg = 'Backend server is spinning up on Render (~1 min wake-up time). Please wait...') => {
+      // Reset live status on connection error so user is notified if server drops
+      hasVerifiedLiveRef.current = false;
+
       if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
       setIsApiLoading(false);
       setApiStatus('error');
       setStatusMessage(msg);
       setIsBannerVisible(true);
 
-      // Auto-hide error banner after 6 seconds so it never gets stuck
+      // Auto-hide error banner after 6 seconds so it never stays stuck
       hideTimerRef.current = setTimeout(() => {
         setIsBannerVisible(false);
       }, 6000);
@@ -103,7 +116,7 @@ export const BackendStatusProvider = ({ children }) => {
     globalTriggerSuccess = triggerApiSuccess;
     globalTriggerError = triggerApiError;
 
-    // Immediately trigger loading disclaimer and check backend status on mount
+    // Trigger initial loading disclaimer and check backend status on mount
     triggerApiStart('Backend is hosted on Render (takes ~1 minute initial wake-up time). Backend is live, please wait...');
 
     API.get('/movies/fetch/all')
