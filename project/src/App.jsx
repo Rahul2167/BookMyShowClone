@@ -24,6 +24,8 @@ import PrivacyPolicy from './pages/PrivacyPolicy';
 import UserComplaints from './pages/UserComplaints';
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider } from './context/AuthContext';
+import { BackendStatusProvider } from './context/BackendStatusContext';
+import ServerStatusBanner from './components/ServerStatusBanner';
 import { useLocation } from 'react-router-dom';
 import { useEffect } from 'react';
 
@@ -71,6 +73,7 @@ function AppContent() {
           minHeight: '100vh',
         }}
       >
+        <ServerStatusBanner />
         {!isAdminPage && <TopBar />}
         <main 
           className="main-content" 
@@ -111,10 +114,12 @@ function App() {
     <GoogleOAuthProvider clientId="186000649352-ej297a31pq7bc44d3oj0nljc5ajajfk7.apps.googleusercontent.com">
       <ThemeProvider>
         <AuthProvider>
-          <Router>
-            <ScrollToTop />
-            <AppContent />
-          </Router>
+          <BackendStatusProvider>
+            <Router>
+              <ScrollToTop />
+              <AppContent />
+            </Router>
+          </BackendStatusProvider>
         </AuthProvider>
       </ThemeProvider>
     </GoogleOAuthProvider>
@@ -122,3 +127,4 @@ function App() {
 }
 
 export default App;
+
