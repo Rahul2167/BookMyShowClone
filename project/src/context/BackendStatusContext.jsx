@@ -1,78 +1,127 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import API from '../services/api';
 
 const BackendStatusContext = createContext();
 
+let globalTriggerStart = null;
+let globalTriggerSuccess = null;
+let globalTriggerError = null;
+
+// Synchronously attach Axios interceptors at module level to guarantee all API calls are caught
+API.interceptors.request.use(
+  (config) => {
+    if (globalTriggerStart) {
+      globalTriggerStart();
+    }
+    return config;
+  },
+  (error) => {
+    if (globalTriggerError) {
+      globalTriggerError();
+    }
+    return Promise.reject(error);
+  }
+);
+
+API.interceptors.response.use(
+  (response) => {
+    if (globalTriggerSuccess) {
+      globalTriggerSuccess();
+    }
+    return response;
+  },
+  (error) => {
+    // If backend responded with HTTP status (e.g. 404, 401, 500), backend is LIVE!
+    if (error.response) {
+      if (globalTriggerSuccess) {
+        globalTriggerSuccess('Backend is live & connected!');
+      }
+    } else {
+      // Network error or timeout (Render backend sleeping)
+      if (globalTriggerError) {
+        globalTriggerError('Connection delayed. Render free backend is spinning up, please allow ~1 min...');
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
 export const BackendStatusProvider = ({ children }) => {
   const [isApiLoading, setIsApiLoading] = useState(false);
-  const [apiStatus, setApiStatus] = useState('loading'); // 'idle' | 'loading' | 'live' | 'error'
-  const [statusMessage, setStatusMessage] = useState(
-    'Backend is hosted on Render (takes ~1 minute initial wake-up time). Backend is live, please wait...'
-  );
-  const [isBannerVisible, setIsBannerVisible] = useState(true);
+  const [apiStatus, setApiStatus] = useState('idle'); // 'idle' | 'loading' | 'live' | 'error'
+  const [statusMessage, setStatusMessage] = useState('');
+  const [isBannerVisible, setIsBannerVisible] = useState(false);
+  const hideTimerRef = useRef(null);
 
-  const triggerApiStart = useCallback((msg = 'Connecting to Render backend. Initial response may take ~1 min if waking up...') => {
-    setIsApiLoading(true);
-    setApiStatus('loading');
-    setStatusMessage(msg);
-    setIsBannerVisible(true);
-  }, []);
+  const triggerApiStart = useCallback(
+    (msg = 'Backend is hosted on Render (takes ~1 minute initial wake-up time). Backend is live, please wait...') => {
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+      setIsApiLoading(true);
+      setApiStatus('loading');
+      setStatusMessage(msg);
+      setIsBannerVisible(true);
+    },
+    []
+  );
 
   const triggerApiSuccess = useCallback((msg = 'Backend is live & connected!') => {
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
     setIsApiLoading(false);
     setApiStatus('live');
     setStatusMessage(msg);
     setIsBannerVisible(true);
 
-    // Auto hide after 4 seconds of live success
-    const timer = setTimeout(() => {
+    // Auto-hide banner 2.5s after backend is live & connected
+    hideTimerRef.current = setTimeout(() => {
       setIsBannerVisible(false);
-    }, 4000);
-    return () => clearTimeout(timer);
+    }, 2500);
   }, []);
 
-  const triggerApiError = useCallback((msg = 'Backend server is spinning up on Render. Initial response may take ~1 min...') => {
-    setIsApiLoading(false);
-    setApiStatus('error');
-    setStatusMessage(msg);
-    setIsBannerVisible(true);
-  }, []);
+  const triggerApiError = useCallback(
+    (msg = 'Backend server is spinning up on Render (~1 min wake-up time). Please wait...') => {
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+      setIsApiLoading(false);
+      setApiStatus('error');
+      setStatusMessage(msg);
+      setIsBannerVisible(true);
+
+      // Auto-hide error banner after 6 seconds so it never gets stuck
+      hideTimerRef.current = setTimeout(() => {
+        setIsBannerVisible(false);
+      }, 6000);
+    },
+    []
+  );
 
   const hideBanner = useCallback(() => {
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
     setIsBannerVisible(false);
   }, []);
 
-  // Wire up Axios interceptors to automatically track API calls to Render/Backend
   useEffect(() => {
-    const reqInterceptor = API.interceptors.request.use(
-      (config) => {
-        triggerApiStart('Backend API hit! Render backend takes ~1 min to wake up if inactive. Please wait...');
-        return config;
-      },
-      (error) => {
-        triggerApiError('Failed to initiate request to backend.');
-        return Promise.reject(error);
-      }
-    );
+    globalTriggerStart = triggerApiStart;
+    globalTriggerSuccess = triggerApiSuccess;
+    globalTriggerError = triggerApiError;
 
-    const resInterceptor = API.interceptors.response.use(
-      (response) => {
-        triggerApiSuccess('Backend is live & responded successfully!');
-        return response;
-      },
-      (error) => {
-        if (error.code === 'ECONNABORTED' || !error.response) {
-          triggerApiError('Connection delayed. Render free backend is spinning up, please allow ~1 min...');
-        } else {
-          triggerApiSuccess('Backend is live!');
+    // Immediately trigger loading disclaimer and check backend status on mount
+    triggerApiStart('Backend is hosted on Render (takes ~1 minute initial wake-up time). Backend is live, please wait...');
+
+    API.get('/movies/fetch/all')
+      .then(() => {
+        triggerApiSuccess('Backend is live & connected!');
+      })
+      .catch((err) => {
+        // If response received (even 4xx/5xx), server is active
+        if (err.response) {
+          triggerApiSuccess('Backend is live & connected!');
         }
-        return Promise.reject(error);
-      }
-    );
+      });
 
     return () => {
-      API.interceptors.request.eject(reqInterceptor);
-      API.interceptors.response.eject(resInterceptor);
+      globalTriggerStart = null;
+      globalTriggerSuccess = null;
+      globalTriggerError = null;
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
     };
   }, [triggerApiStart, triggerApiSuccess, triggerApiError]);
 
